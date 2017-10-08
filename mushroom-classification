@@ -1,0 +1,134 @@
+set.seed(2)
+library(caret)
+library(randomForest)
+attach(data)
+library(leaps)
+library(readr)
+names(data)
+
+data_mushrooms <- read_csv("~/R/proyecto/data_mushrooms.txt",col_names=c("target","cap.shape","cap.surface","cap.color","bruises",
+                                                                        "odor","gill.attachment","gill.spacing","gill.size",
+                                                                      "gill.color","stalk.shape","stalk.root","stalk.surface.above.ring",
+                                                                      "stalk.surface.bellow.ring","stalk.color.above.ring",
+                                                                      "stalk.color.bellow.ring","veil.type","veil.color","ring.number",
+                                                                      "ring.type","spore.print.color","population","habitat"))
+
+str(data_mushrooms)
+#Es un problema de clasificacion ya que hay que determinar si los hongos
+#son venenosos o no asi que primero se debe transformar las variables 
+#a categoria
+
+
+data2 <- data_mushrooms
+
+character_vars <- lapply(data2, class) == "character"
+
+data2[, character_vars] <- lapply(data2[, character_vars], as.factor)
+
+str(data2)
+
+##Para realizar regresion logistica transforme los datos a numerico, dado qu
+#de los p`s me salia significativo la primera vez que lo probe.
+
+data3 <- data2[-1]
+factor_vars <- lapply(data3,class) == "factor"
+
+data3[,factor_vars] <- lapply(data3[,factor_vars],as.numeric)
+
+data3$target <-data2$target
+
+data3$target <- as.factor(data3$target)
+
+
+
+
+#El siguiente paso es eliminar variables que no le aportan ningun valor al modelo
+#como las variables que solo tienen un nivel y las variables que tiene valores NA
+
+
+data3$veil.type <- NULL
+
+#La variable stalk_root contiene valores NA que son representados con "?" 
+#Para tratarlos voy a eliminar la columna dado que contiene 2100 valores NA
+# y esto puede afectar al modelo
+
+data3$stalk.root <- NULL
+
+#lo siguiente es crear la particion de los datos
+
+inTrain <- createDataPartition(y = data3$target, p = 0.7, list = FALSE)
+trainSet <- data3[inTrain,]
+testSet <- data3[-inTrain,]
+
+#Se comprueban los datos
+
+dim(trainSet)
+dim(testSet)
+
+#para tratar este problema de clasificacion voy a recurrir a una regresion 
+#logistica
+
+regresionLog<- glm(trainSet$target ~ ., family = binomial, data = trainSet)
+summary(regresionLog)
+predictionTrain <- predict(regresionLog, newdata=testSet, type="response")
+head(predictionTrain)
+
+probabilities <- ifelse(predictionTrain > 0.5, "p", "e")
+table(probabilities, testSet$target)
+accuracy <- mean(probabilities == data3$target)
+accuracy
+
+
+#el modelo tiene una accuracy de 55% 
+#al realizar la regresion logistica existen dos variables que no tienen 
+#importancia en el modelo "veil.color" y "gill.attachment". Voy a construir
+#otr dataset sin estas dos variables para ver si logro aumentar el accuaracy
+
+data4 <- data3
+
+data4$veil.color <- NULL
+data4$gill.attachment<- NULL
+
+inTrain2 <- createDataPartition(y = data4$target, p = 0.7, list = FALSE)
+trainSet2 <- data4[inTrain2,]
+testSet2 <- data4[-inTrain2,]
+
+regresionLog2<- glm(trainSet2$target ~ ., family = binomial, data = trainSet2)
+summary(regresionLog2)
+predictionTrain2 <- predict(regresionLog2, newdata=testSet2, type="response")
+head(predictionTrain2)
+
+probabilities2 <- ifelse(predictionTrain2 > 0.5, "p", "e")
+table(probabilities2, testSet2$target)
+accuracy2 <- mean(probabilities2 == data4$target)
+accuracy2
+
+##el accuracy dio 55% despues de esta prueba
+
+
+
+#ahora voy a probar con el metodo randomForest para ver si puede predecir
+#mejor
+
+train= sample(1:nrow(trainSet),5668)
+
+rfModel <- randomForest(target~ .,data=data2,subset=train)
+varImpPlot(rfModel,
+           sort = T,
+           main="Variable Importance",
+           n.var=5)
+#en el grafico se puede apreciar que las variables mas importantes son 
+#odor y spore.print.color
+
+inTrain3 <- createDataPartition(y = data2$target, p = 0.7, list = FALSE)
+trainSet3 <- data2[inTrain3,]
+testSet3<- data2[-inTrain3,]
+
+predictionsrf <- predict(rfModel,testSet3)
+
+
+confusionMatrix(data=predictionsrf,
+                reference=testSet3$target,
+   positive = "e" )
+## con random forest he encontrado una accuaracy de 98% por lo tanto es 
+#definitivamente un buen modelo predictor para este problema de clasificacion
